@@ -5,6 +5,7 @@ import static org.bitstrings.maven.plugins.dockerrun.DockerRunProperties.Propert
 import static org.bitstrings.maven.plugins.dockerrun.Run.ImagePullPolicy.ALWAYS;
 import static org.bitstrings.maven.plugins.dockerrun.Run.ImagePullPolicy.IF_NOT_PRESENT;
 
+import java.io.Closeable;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -109,6 +110,10 @@ public class DockerRunMojo
 
     @Getter
     private String aliasNameLogAppend;
+
+    private static final PullImageResultCallback PULL_IMAGE_RESULT_CALLBACK_NOOP = new PullImageResultCallback();
+
+    private static final ResultCallback.Adapter<?> RESULT_CALLBACK_NOOP = new ResultCallback.Adapter<>();
 
     @Override
     public void execute()
@@ -261,7 +266,35 @@ public class DockerRunMojo
 
                         dockerClient.pullImageCmd(imageName)
                             .withTag(imageTag)
-                            .exec(new PullImageResultCallback())
+                            .exec(quiet
+                                ? pullImageResultCallbackNoop()
+                                : new PullImageResultCallback()
+                                {
+                                    @Override
+                                    public void onStart(Closeable stream)
+                                    {
+                                        getLog().info("Pulling image " + run.getImage() + " started.");
+
+                                        super.onStart(stream);
+                                    }
+
+                                    @Override
+                                    public void onComplete()
+                                    {
+                                        getLog().info("Image " + run.getImage() + " pull completed.");
+
+                                        super.onComplete();
+                                    }
+
+                                    @Override
+                                    public void onError(Throwable throwable)
+                                    {
+                                        getLog().error("Error pulling image " + run.getImage() + ".", throwable);
+
+                                        super.onError(throwable);
+                                    }
+                                }
+                            )
                             .awaitCompletion();
 
                         pullImage = false;
@@ -297,6 +330,11 @@ public class DockerRunMojo
 
             dockerClient.startContainerCmd(createContainerResponse.getId()).exec();
 
+            if (!quiet)
+            {
+                getLog().info("Container " + createContainerResponse.getId() + aliasNameLogAppend + " started.");
+            }
+
             try
             {
                 dockerClient.logContainerCmd(createContainerResponse.getId())
@@ -304,12 +342,12 @@ public class DockerRunMojo
                     .withStdErr(true)
                     .withTailAll()
                     .withFollowStream(true)
-                    .exec(new ResultCallback.Adapter<>()
-                    {
-                        @Override
-                        public void onNext(Frame object)
+                    .exec(quiet
+                        ? resultCallbackAdapterNoop()
+                        : new ResultCallback.Adapter<>()
                         {
-                            if (!quiet)
+                            @Override
+                            public void onNext(Frame object)
                             {
                                 StreamType streamType = object.getStreamType();
 
@@ -318,11 +356,12 @@ public class DockerRunMojo
                                         || (run.isEchoStdErr() && (streamType == StreamType.STDERR))
                                 )
                                 {
-                                    System.out.println(new String(object.getPayload()));
+                                    System.out.print(new String(object.getPayload()));
                                 }
                             }
                         }
-                    }).awaitCompletion();
+                    )
+                    .awaitCompletion();
             }
             catch (InterruptedException e)
             {
@@ -396,5 +435,15 @@ public class DockerRunMojo
 
         imageName = ArrayUtils.get(imageParts, 0);
         imageTag = ArrayUtils.get(imageParts, 1, "latest");
+    }
+
+    public static <T> ResultCallback.Adapter<T> resultCallbackAdapterNoop()
+    {
+        return (ResultCallback.Adapter<T>) RESULT_CALLBACK_NOOP;
+    }
+
+    public static PullImageResultCallback pullImageResultCallbackNoop()
+    {
+        return PULL_IMAGE_RESULT_CALLBACK_NOOP;
     }
 }
