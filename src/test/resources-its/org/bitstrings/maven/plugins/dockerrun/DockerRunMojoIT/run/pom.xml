@@ -39,6 +39,8 @@
                     <execution>
                         <goals>
                             <goal>run</goal>
+                            <goal>stop</goal>
+                            <goal>remove</goal>
                         </goals>
                     </execution>
                 </executions>

@@ -1,46 +1,35 @@
 package org.bitstrings.maven.plugins.dockerrun;
 
 import static org.apache.maven.plugins.annotations.LifecyclePhase.PRE_INTEGRATION_TEST;
-import static org.bitstrings.maven.plugins.dockerrun.DockerRunProperties.PropertyType.ID;
+import static org.bitstrings.maven.plugins.dockerrun.DockerRunMavenProperties.PropertyType.ID;
 import static org.bitstrings.maven.plugins.dockerrun.Run.ImagePullPolicy.ALWAYS;
 import static org.bitstrings.maven.plugins.dockerrun.Run.ImagePullPolicy.IF_NOT_PRESENT;
 
 import java.io.Closeable;
-import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.collections4.map.LinkedMap;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.maven.execution.AbstractExecutionListener;
 import org.apache.maven.execution.ExecutionEvent;
-import org.apache.maven.execution.MavenSession;
-import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
-import org.apache.maven.project.MavenProject;
 
-import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.PullImageResultCallback;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Bind;
-import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.StreamType;
 import com.github.dockerjava.api.model.Volume;
-import com.github.dockerjava.core.DefaultDockerClientConfig;
-import com.github.dockerjava.core.DockerClientBuilder;
-import com.github.dockerjava.core.DockerClientConfig;
-import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
-import com.github.dockerjava.transport.DockerHttpClient;
 
 import lombok.Getter;
 import oshi.SystemInfo;
@@ -54,23 +43,15 @@ import oshi.software.os.OSProcess;
     requiresOnline = false
 )
 public class DockerRunMojo
-    extends AbstractMojo
+    extends AbstractDockerRunMojo
 {
-    @Parameter(defaultValue = "${project}", readonly = true)
+    @Parameter
     @Getter
-    private MavenProject mavenProject;
+    private List<Run> runs;
 
-    @Parameter(defaultValue = "${session}", readonly = true)
+    @Parameter
     @Getter
-    private MavenSession mavenSession;
-
-    @Parameter(defaultValue = "false")
-    @Getter
-    private boolean quiet;
-
-    @Parameter(defaultValue = "dockerrun.")
-    @Getter
-    private String propertyPrefix;
+    private boolean removeVolumesOnContainerRemove = true;
 
     @Parameter(defaultValue = "true")
     @Getter
@@ -80,36 +61,22 @@ public class DockerRunMojo
     @Getter
     private boolean removeContainersOnVmShutdown;
 
-    @Parameter
     @Getter
-    private List<Run> runs;
+    private DockerRunMavenProperties dockerRunMavenProperties;
 
     @Getter
-    private DockerRunProperties dockerRunProperties;
-
-    @Getter
-    private String imageName;
+    private String imageRepository;
 
     @Getter
     private String imageTag;
 
     @Getter
-    private DockerClientConfig dockerClientConfig;
-
-    @Getter
-    private DockerHttpClient dockerHttpClient;
-
-    @Getter
-    private DockerClient dockerClient;
-
-    @Getter
     private HostConfig hostConfig;
 
     @Getter
-    private HashMap<String, Run> runById = new HashMap<>();
+    private LinkedMap<String, Run> runById = new LinkedMap<>();
 
-    @Getter
-    private String aliasNameLogAppend;
+    private Map<String, Object> data;
 
     private static final PullImageResultCallback PULL_IMAGE_RESULT_CALLBACK_NOOP = new PullImageResultCallback();
 
@@ -119,6 +86,8 @@ public class DockerRunMojo
     public void execute()
         throws MojoExecutionException, MojoFailureException
     {
+        data = getMavenSession().getRequest().getData();
+
         if (removeContainersOnVmShutdown)
         {
             Runtime.getRuntime().addShutdownHook(
@@ -127,14 +96,20 @@ public class DockerRunMojo
                     @Override
                     public void run()
                     {
-                        removeContainers();
+                        try
+                        {
+                            removeContainers();
+                        }
+                        catch (MojoExecutionException e)
+                        {
+                        }
                     }
                 }
             );
         }
 
         MavenUtils.proxyExecutionListener(
-            mavenSession,
+            getMavenSession(),
             true,
             new AbstractExecutionListener()
             {
@@ -143,13 +118,28 @@ public class DockerRunMojo
                 {
                     if (removeContainersOnBuildComplete)
                     {
-                        removeContainers();
+                        try
+                        {
+                            removeContainers();
+                        }
+                        catch (MojoExecutionException e)
+                        {
+                        }
                     }
                 }
             }
         );
 
-        dockerRunProperties = new DockerRunProperties(mavenProject, propertyPrefix);
+        dockerRunMavenProperties = new DockerRunMavenProperties(getMavenProject(), getPropertyPrefix());
+
+        LinkedMap<String, Run> dataRunById = MavenUtils.getRequestDockerRunData(getMavenSession().getRequest());
+
+        if (dataRunById == null)
+        {
+            dataRunById = new LinkedMap<>();
+
+            data.put(DockerRunMojo.class.getName(), dataRunById);
+        }
 
         for (Run run : runs)
         {
@@ -163,20 +153,6 @@ public class DockerRunMojo
             }
 
             extractImageParts(run);
-
-            dockerClientConfig = DefaultDockerClientConfig.createDefaultConfigBuilder().build();
-
-            dockerHttpClient = new ApacheDockerHttpClient.Builder()
-                .dockerHost(dockerClientConfig.getDockerHost())
-                .sslConfig(dockerClientConfig.getSSLConfig())
-                .connectionTimeout(Duration.ofSeconds(60))
-                .maxConnections(100)
-                .responseTimeout(Duration.ofSeconds(60))
-                .build();
-
-            dockerClient = DockerClientBuilder.getInstance(dockerClientConfig)
-                .withDockerHttpClient(dockerHttpClient)
-                .build();
 
             hostConfig = new HostConfig()
                 .withInit(run.isInit())
@@ -197,30 +173,9 @@ public class DockerRunMojo
                 hostConfig.withBinds(getBindsFromVolumesParam(run.getVolumes()));
             }
 
-            CreateContainerCmd containerCmd = dockerClient.createContainerCmd(run.getImage())
+            CreateContainerCmd containerCmd = getDockerClient().createContainerCmd(run.getImage())
                 .withHostConfig(hostConfig)
                 .withTty(run.isTty());
-
-            if (quiet)
-            {
-                aliasNameLogAppend = "";
-            }
-            else
-            {
-                StringBuilder aliasLogBuilder = new StringBuilder();
-
-                if (run.getAlias() != null)
-                {
-                    aliasLogBuilder.append(" alias ").append(run.getAlias());
-                }
-
-                if (run.getName() != null)
-                {
-                    aliasLogBuilder.append(" named ").append(run.getName());
-                }
-
-                aliasNameLogAppend = aliasLogBuilder.toString();
-            }
 
             if (run.getName() != null)
             {
@@ -264,9 +219,9 @@ public class DockerRunMojo
                     {
                         retry = false;
 
-                        dockerClient.pullImageCmd(imageName)
+                        getDockerClient().pullImageCmd(imageRepository)
                             .withTag(imageTag)
-                            .exec(quiet
+                            .exec(isQuiet()
                                 ? pullImageResultCallbackNoop()
                                 : new PullImageResultCallback()
                                 {
@@ -323,26 +278,32 @@ public class DockerRunMojo
 
             runById.put(createContainerResponse.getId(), run);
 
+            MavenUtils.getRequestDockerRunData(getMavenSession().getRequest());
+
+            dataRunById.put(createContainerResponse.getId(), run);
+
             if (run.getAlias() != null)
             {
-                dockerRunProperties.setDockerRunProperty(run.getAlias(), ID, createContainerResponse.getId());
+                dockerRunMavenProperties.setDockerRunProperty(run.getAlias(), ID, createContainerResponse.getId());
             }
 
-            dockerClient.startContainerCmd(createContainerResponse.getId()).exec();
+            getDockerClient().startContainerCmd(createContainerResponse.getId()).exec();
 
-            if (!quiet)
+            if (!isQuiet())
             {
-                getLog().info("Container " + createContainerResponse.getId() + aliasNameLogAppend + " started.");
+                getLog().info(
+                    "Container " + createContainerResponse.getId() + run.getAliasNameLogAppend() + " started."
+                );
             }
 
             try
             {
-                dockerClient.logContainerCmd(createContainerResponse.getId())
+                getDockerClient().logContainerCmd(createContainerResponse.getId())
                     .withStdOut(true)
                     .withStdErr(true)
                     .withTailAll()
                     .withFollowStream(true)
-                    .exec(quiet
+                    .exec(isQuiet()
                         ? resultCallbackAdapterNoop()
                         : new ResultCallback.Adapter<>()
                         {
@@ -371,40 +332,17 @@ public class DockerRunMojo
     }
 
     protected void removeContainers()
+        throws MojoExecutionException
     {
-        List<Container> containers =
-            dockerClient.listContainersCmd().withIdFilter(runById.keySet()).withShowAll(true).exec();
+        Remove remove = new Remove();
 
-        containers.forEach(container -> removeContainer(container));
-    }
+        remove.setIds(runById.asList());
+        remove.setRemoveVolumesOnContainerRemove(removeVolumesOnContainerRemove);
+        remove.setStopBeforeContainerRemove(true);
+        remove.setStopContainerTimeout(120);
+        remove.setIgnoreContainerNotFound(true);
 
-    protected void removeContainer(Container container)
-    {
-        if (!quiet)
-        {
-            getLog().info("Removing container " + container.getId() + aliasNameLogAppend + ".");
-        }
-
-        try
-        {
-            dockerClient.stopContainerCmd(container.getId()).withTimeout(30).exec();
-        }
-        catch (Exception e)
-        {
-        }
-
-        try
-        {
-            dockerClient.removeContainerCmd(container.getId()).withForce(true).withRemoveVolumes(true).exec();
-        }
-        catch (Exception e)
-        {
-        }
-
-        if (!quiet)
-        {
-            getLog().info("Removed container " + container.getId() + aliasNameLogAppend + ".");
-        }
+        remove.remove(this);
     }
 
     protected List<Bind> getBindsFromVolumesParam(Volumes volumes)
@@ -431,10 +369,10 @@ public class DockerRunMojo
 
     protected void extractImageParts(Run run)
     {
-        String[] imageParts = StringUtils.split(run.getImage(), ':');
+        String[] imageParts = getDockerHelper().extractImageParts(run.getImage());
 
-        imageName = ArrayUtils.get(imageParts, 0);
-        imageTag = ArrayUtils.get(imageParts, 1, "latest");
+        imageRepository = imageParts[0];
+        imageTag = imageParts[1];
     }
 
     public static <T> ResultCallback.Adapter<T> resultCallbackAdapterNoop()

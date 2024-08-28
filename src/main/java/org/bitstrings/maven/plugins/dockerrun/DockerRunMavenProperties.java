@@ -7,7 +7,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
-public final class DockerRunProperties
+public final class DockerRunMavenProperties
 {
     @NonNull
     @Getter

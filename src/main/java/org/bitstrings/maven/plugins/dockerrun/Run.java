@@ -78,8 +78,32 @@ public class Run
     @Setter
     private String alias;
 
+    private String aliasNameLogAppend;
+
     public enum ImagePullPolicy
     {
         NEVER, IF_NOT_PRESENT, ALWAYS
+    }
+
+    public String getAliasNameLogAppend()
+    {
+        if (aliasNameLogAppend == null)
+        {
+            StringBuilder aliasLogBuilder = new StringBuilder();
+
+            if (alias != null)
+            {
+                aliasLogBuilder.append(" alias ").append(alias);
+            }
+
+            if (name != null)
+            {
+                aliasLogBuilder.append(" named ").append(name);
+            }
+
+            aliasNameLogAppend = aliasLogBuilder.toString();
+        }
+
+        return aliasNameLogAppend;
     }
 }
