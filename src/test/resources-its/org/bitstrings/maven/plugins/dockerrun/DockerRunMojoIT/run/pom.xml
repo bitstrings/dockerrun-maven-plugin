@@ -30,6 +30,16 @@
                             <env>
                                 <XXX>I Don't care.</XXX>
                             </env>
+                            <volumes>
+                                <bind>
+                                    <volume>${project.build.directory}:/root/x</volume>
+                                    <mount>
+                                        <source>${project.build.directory}/y</source>
+                                        <destination>/root/y</destination>
+                                        <createSource>DIR</createSource>
+                                    </mount>
+                                </bind>
+                            </volumes>
                             <setUserToCurrent>true</setUserToCurrent>
                             <autoRemove>false</autoRemove>
                         </run>
