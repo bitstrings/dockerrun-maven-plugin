@@ -29,7 +29,7 @@ import com.github.dockerjava.api.model.Container;
 import lombok.Getter;
 import lombok.Setter;
 
-public class DockerRunOperation
+public abstract class AbstractDockerRunOperation
 {
     @Getter
     @Setter
@@ -103,4 +103,7 @@ public class DockerRunOperation
 
         return toStopIds;
     }
+
+    public abstract void exec(AbstractDockerRunMojo dockerRunMojo)
+        throws MojoExecutionException;
 }

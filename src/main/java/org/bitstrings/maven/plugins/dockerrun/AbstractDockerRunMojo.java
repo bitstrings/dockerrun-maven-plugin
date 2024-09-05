@@ -27,9 +27,9 @@ public abstract class AbstractDockerRunMojo
     @Getter
     private MavenSession mavenSession;
 
-    @Parameter(defaultValue = "false")
+    @Parameter(defaultValue = "NORMAL")
     @Getter
-    private boolean quiet;
+    private Verbosity verbosity;
 
     @Parameter(defaultValue = "dockerrun.")
     @Getter
@@ -45,6 +45,11 @@ public abstract class AbstractDockerRunMojo
 
     private DockerHelper dockerHelper;
 
+    public enum Verbosity
+    {
+        QUIET, NORMAL, HIGH
+    }
+
     public DockerClient getDockerClient()
     {
         if (dockerClient == null)
@@ -55,7 +60,7 @@ public abstract class AbstractDockerRunMojo
                 .dockerHost(dockerClientConfig.getDockerHost())
                 .sslConfig(dockerClientConfig.getSSLConfig())
                 .connectionTimeout(Duration.ofSeconds(60))
-                .maxConnections(100)
+                .maxConnections(250)
                 .responseTimeout(Duration.ofSeconds(60))
                 .build();
 
@@ -75,5 +80,10 @@ public abstract class AbstractDockerRunMojo
         }
 
         return dockerHelper;
+    }
+
+    public boolean isQuiet()
+    {
+        return verbosity == Verbosity.QUIET;
     }
 }

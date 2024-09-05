@@ -1,6 +1,7 @@
 package org.bitstrings.maven.plugins.dockerrun;
 
 import static java.util.Collections.emptyList;
+import static java.util.Collections.singletonList;
 import static org.apache.maven.plugins.annotations.LifecyclePhase.PRE_INTEGRATION_TEST;
 
 import java.util.List;
@@ -44,9 +45,14 @@ public class DockerRunStopMojo
     public void execute()
         throws MojoExecutionException, MojoFailureException
     {
+        if (stops.isEmpty())
+        {
+            stops = singletonList(new Stop());
+        }
+
         for (Stop stop : stops)
         {
-            stop.stop(this);
+            stop.exec(this);
         }
     }
 }

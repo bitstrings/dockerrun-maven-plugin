@@ -6,6 +6,9 @@ import static org.bitstrings.maven.plugins.dockerrun.Run.ImagePullPolicy.ALWAYS;
 import static org.bitstrings.maven.plugins.dockerrun.Run.ImagePullPolicy.IF_NOT_PRESENT;
 
 import java.io.Closeable;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -91,20 +94,20 @@ public class DockerRunMojo
         if (removeContainersOnVmShutdown)
         {
             Runtime.getRuntime().addShutdownHook(
-                new Thread()
-                {
-                    @Override
-                    public void run()
+                new Thread(() -> {
+                    try
                     {
-                        try
+                        if (!isQuiet())
                         {
-                            removeContainers();
+                            getLog().info("VM shutdown container clean up.");
                         }
-                        catch (MojoExecutionException e)
-                        {
-                        }
+
+                        removeContainers();
                     }
-                }
+                    catch (MojoExecutionException e)
+                    {
+                    }
+                })
             );
         }
 
@@ -118,6 +121,11 @@ public class DockerRunMojo
                 {
                     if (removeContainersOnBuildComplete)
                     {
+                        if (!isQuiet())
+                        {
+                            getLog().info("End build container clean up.");
+                        }
+
                         try
                         {
                             removeContainers();
@@ -342,7 +350,7 @@ public class DockerRunMojo
         remove.setStopContainerTimeout(120);
         remove.setIgnoreContainerNotFound(true);
 
-        remove.remove(this);
+        remove.exec(this);
     }
 
     protected List<Bind> getBindsFromVolumesParam(Volumes volumes)
@@ -350,18 +358,35 @@ public class DockerRunMojo
     {
         List<Bind> binds = new ArrayList<>();
 
-        for (String volumeBind : volumes.getBind().getVolumes())
+        for (VolumeBind.Mount volumeBind : volumes.getBind().getVolumes())
         {
-            String[] paths = StringUtils.split(volumeBind, ":", 2);
-
-            if (paths.length != 2)
+            if (StringUtils.isEmpty(volumeBind.getSource()) || StringUtils.isEmpty(volumeBind.getDestination()))
             {
                 throw new MojoFailureException(
                     "Volume bind " + volumeBind + " should contain exactly two paths [source]:[destination]."
                 );
             }
 
-            binds.add(new Bind(paths[0], new Volume(paths[1])));
+            binds.add(new Bind(volumeBind.getSource(), new Volume(volumeBind.getDestination())));
+
+            try
+            {
+                switch (volumeBind.getCreateSource())
+                {
+                    case DIR:
+                        Files.createDirectories(Path.of(volumeBind.getSource()));
+                        getLog().info("Directory " + volumeBind.getSource() + " created.");
+                        break;
+                    case FILE:
+                        Files.createFile(Path.of(volumeBind.getSource()));
+                        getLog().info("File " + volumeBind.getSource() + " created.");
+                        break;
+                }
+            }
+            catch (IOException e)
+            {
+                throw new MojoFailureException(e.getMessage(), e);
+            }
         }
 
         return binds;

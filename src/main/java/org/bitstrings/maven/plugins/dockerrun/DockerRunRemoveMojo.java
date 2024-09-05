@@ -1,6 +1,7 @@
 package org.bitstrings.maven.plugins.dockerrun;
 
 import static java.util.Collections.emptyList;
+import static java.util.Collections.singletonList;
 import static org.apache.maven.plugins.annotations.LifecyclePhase.PRE_INTEGRATION_TEST;
 
 import java.util.List;
@@ -34,7 +35,7 @@ public class DockerRunRemoveMojo
 
     @Parameter
     @Getter
-    private List<Stop> stops = emptyList();
+    private List<Remove> removes = emptyList();
 
     @Parameter(defaultValue = "false")
     @Getter
@@ -44,9 +45,14 @@ public class DockerRunRemoveMojo
     public void execute()
         throws MojoExecutionException, MojoFailureException
     {
-        for (Stop stop : stops)
+        if (removes.isEmpty())
         {
-            stop.stop(this);
+            removes = singletonList(new Remove());
+        }
+
+        for (Remove remove : removes)
+        {
+            remove.exec(this);
         }
     }
 }

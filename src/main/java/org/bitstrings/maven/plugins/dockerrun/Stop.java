@@ -3,6 +3,7 @@ package org.bitstrings.maven.plugins.dockerrun;
 import java.util.Set;
 
 import org.apache.maven.plugin.MojoExecutionException;
+import org.bitstrings.maven.plugins.dockerrun.AbstractDockerRunMojo.Verbosity;
 
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.exception.NotModifiedException;
@@ -11,7 +12,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 public class Stop
-    extends DockerRunOperation
+    extends AbstractDockerRunOperation
 {
     @Getter
     @Setter
@@ -21,7 +22,8 @@ public class Stop
     @Setter
     private int stopContainerTimeout = 30;
 
-    public void stop(AbstractDockerRunMojo dockerRunMojo)
+    @Override
+    public void exec(AbstractDockerRunMojo dockerRunMojo)
         throws MojoExecutionException
     {
         Set<String> dockerRunIds =
@@ -41,7 +43,7 @@ public class Stop
 
             try
             {
-                stop(dockerRunMojo, id);
+                exec(dockerRunMojo, id);
             }
             catch (NotFoundException e)
             {
@@ -53,11 +55,11 @@ public class Stop
         }
     }
 
-    public void stop(AbstractDockerRunMojo dockerRunMojo, String id)
+    public void exec(AbstractDockerRunMojo dockerRunMojo, String id)
     {
         Run run = MavenUtils.getRequestDockerRunData(dockerRunMojo.getMavenSession().getRequest()).get(id);
 
-        if (!dockerRunMojo.isQuiet())
+        if (dockerRunMojo.getVerbosity() == Verbosity.HIGH)
         {
             dockerRunMojo.getLog().info("Stopping container " + id + run.getAliasNameLogAppend() + ".");
         }
@@ -68,7 +70,7 @@ public class Stop
         }
         catch (NotModifiedException e)
         {
-            if (!dockerRunMojo.isQuiet())
+            if (dockerRunMojo.getVerbosity() == Verbosity.HIGH)
             {
                 dockerRunMojo.getLog().info("Container " + id + run.getAliasNameLogAppend() + " already stopped.");
             }
