@@ -299,6 +299,55 @@ public class DockerRunMojo
 
             if (!isQuiet())
             {
+                if (Verbosity.HIGH == getVerbosity())
+                {
+                    StringBuilder info = new StringBuilder()
+                        .append("Container ")
+                        .append(createContainerResponse.getId())
+                        .append(run.getAliasNameLogAppend())
+                        .append(System.lineSeparator())
+                        .append("Environment:")
+                        .append(System.lineSeparator());
+
+                    if (run.getEnv() != null)
+                    {
+                        run.getEnv().entrySet().forEach(
+                            envEntry -> {
+                                info.append(envEntry.getKey())
+                                    .append("=")
+                                    .append(envEntry.getValue())
+                                    .append(System.lineSeparator());
+                            }
+                        );
+                    }
+
+                    info.append("Volumes:")
+                        .append(System.lineSeparator());
+
+                    if (run.getVolumes() != null)
+                    {
+                        run.getVolumes().getBind().getVolumes().forEach(
+                            volume -> {
+                                info.append(volume.getSource())
+                                    .append(":")
+                                    .append(volume.getDestination());
+
+                                if (volume.getOptions() != null)
+                                {
+                                    info.append(":");
+                                    info.append(volume.getOptions());
+                                }
+
+                                info.append(" - create source: ")
+                                    .append(volume.getCreateSource())
+                                    .append(System.lineSeparator());
+                            }
+                        );
+                    }
+
+                    getLog().info(info.toString());
+                }
+
                 getLog().info(
                     "Container " + createContainerResponse.getId() + run.getAliasNameLogAppend() + " started."
                 );

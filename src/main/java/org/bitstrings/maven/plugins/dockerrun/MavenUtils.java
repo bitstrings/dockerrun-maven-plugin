@@ -45,10 +45,9 @@ public final class MavenUtils
             new Class[] { ExecutionListener.class },
             (proxy, method, args) -> {
                 // current API always returns Void.TYPE
-                // but lets futureproof it?
-                Object proxyReturn = method.invoke(executionListenerProxy, args);
+                method.invoke(executionListenerProxy, args);
 
-                return Void.TYPE.equals(proxyReturn) ? method.invoke(executionListener, args) : proxyReturn;
+                return method.invoke(executionListener, args);
             }
         );
 
