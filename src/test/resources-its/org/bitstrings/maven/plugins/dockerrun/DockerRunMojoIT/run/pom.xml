@@ -19,6 +19,7 @@
                 <artifactId>dockerrun-maven-plugin</artifactId>
                 <version>@project.version@</version>
                 <configuration>
+                    <verbosity>HIGH</verbosity>
                     <runs>
                         <run>
                             <image>ubuntu:latest</image>
@@ -29,7 +30,7 @@
                             </args>
                             <env>
                                 <XXX>I Don't care.</XXX>
-                            </env>
+                            </env>`
                             <volumes>
                                 <bind>
                                     <volume>${project.build.directory}:/root/x</volume>
