@@ -1,12 +1,9 @@
 package org.bitstrings.maven.plugins.dockerrun;
 
-import java.util.Set;
-
 import org.apache.maven.plugin.MojoExecutionException;
-import org.bitstrings.maven.plugins.dockerrun.AbstractDockerRunMojo.Verbosity;
 
-import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.exception.NotModifiedException;
+import com.github.dockerjava.api.model.Container;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -22,65 +19,70 @@ public class Stop
     @Setter
     private int stopContainerTimeout = 30;
 
+    public Stop(AbstractDockerRunMojo mojo)
+    {
+        super(mojo);
+    }
+
     @Override
-    public void exec(AbstractDockerRunMojo dockerRunMojo)
+    public void exec()
         throws MojoExecutionException
     {
-        Set<String> dockerRunIds =
-            MavenUtils.getRequestDockerRunData(dockerRunMojo.getMavenSession().getRequest()).keySet();
-
-        for (String id : getContainersIds(dockerRunMojo))
+        for (String id : getContainersIds())
         {
-            if (!dockerRunIds.contains(id))
-            {
-                if (ignoreContainerNotFound)
-                {
-                    continue;
-                }
-
-                throw new MojoExecutionException("Container id " + id + " not found for this build.");
-            }
-
-            try
-            {
-                exec(dockerRunMojo, id);
-            }
-            catch (NotFoundException e)
-            {
-                if (!ignoreContainerNotFound)
-                {
-                    throw new MojoExecutionException("Container id " + id + " not found.");
-                }
-            }
+            exec(id);
         }
     }
 
-    public void exec(AbstractDockerRunMojo dockerRunMojo, String id)
+    public void exec(String id)
+        throws MojoExecutionException
     {
-        Run run = MavenUtils.getRequestDockerRunData(dockerRunMojo.getMavenSession().getRequest()).get(id);
+        Run run = MavenUtils.getRequestDockerRunData(getMojo().getMavenSession().getRequest()).get(id);
 
-        if (dockerRunMojo.getVerbosity() == Verbosity.HIGH)
+        if (run == null)
         {
-            dockerRunMojo.getLog().info("Stopping container " + id + run.getAliasNameLogAppend() + ".");
-        }
-
-        try
-        {
-            dockerRunMojo.getDockerHelper().stopContainer(id, stopContainerTimeout);
-        }
-        catch (NotModifiedException e)
-        {
-            if (dockerRunMojo.getVerbosity() == Verbosity.HIGH)
+            if (!ignoreContainerNotFound)
             {
-                dockerRunMojo.getLog().info("Container " + id + run.getAliasNameLogAppend() + " already stopped.");
+                throw new MojoExecutionException("Container id " + id + " not found for this build.");
             }
 
             return;
         }
 
-        if (!dockerRunMojo.isQuiet())
+        Container container = getMojo().getDockerHelper().getContainer(id);
+
+        if (container == null)
         {
-            dockerRunMojo.getLog().info("Container " + id + run.getAliasNameLogAppend() + " stopped.");
+            if (!ignoreContainerNotFound)
+            {
+                throw new MojoExecutionException("Container " + id + run.getAliasNameLogAppend() + " not found.");
+            }
+
+            return;
+        }
+
+        if (!getMojo().isQuiet())
+        {
+            getMojo().getLog().info(
+                "Stopping container " + id
+                    + "(" + getMojo().getDockerHelper().getContainerStateLogAppend(container) + ")"
+                    + run.getAliasNameLogAppend()
+                    + "."
+            );
+        }
+
+        try
+        {
+            getMojo().getDockerClient().stopContainerCmd(id).withTimeout(stopContainerTimeout).exec();
+        }
+        catch (NotModifiedException e)
+        {
+            throw new MojoExecutionException("Container " + id + run.getAliasNameLogAppend() + " stop request failed.");
+        }
+
+        if (!getMojo().isQuiet())
+        {
+            getMojo().getLog().info("Container " + id + run.getAliasNameLogAppend() + " stopped.");
         }
     }
 }

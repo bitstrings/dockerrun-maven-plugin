@@ -20,7 +20,9 @@ public final class DockerRunMavenProperties
     @RequiredArgsConstructor
     public enum PropertyType
     {
-        ID("id");
+        ID("id"),
+        STATE("state"),
+        STATUS_CODE("statusCode");
 
         @NonNull
         @Getter

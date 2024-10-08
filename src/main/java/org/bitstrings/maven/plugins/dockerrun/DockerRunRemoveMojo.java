@@ -42,17 +42,17 @@ public class DockerRunRemoveMojo
     private boolean allowExternalIds;
 
     @Override
-    public void execute()
+    public void dockerrunExec()
         throws MojoExecutionException, MojoFailureException
     {
         if (removes.isEmpty())
         {
-            removes = singletonList(new Remove());
+            removes = singletonList(new Remove(this));
         }
 
         for (Remove remove : removes)
         {
-            remove.exec(this);
+            remove.exec();
         }
     }
 }

@@ -1,11 +1,16 @@
 package org.bitstrings.maven.plugins.dockerrun;
 
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.exception.NotModifiedException;
+import com.github.dockerjava.api.model.Container;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +22,7 @@ public class DockerHelper
     private final DockerClient dockerClient;
 
     public void stopContainer(String id, int stopTimeOut)
-        throws NotFoundException, NotModifiedException
+        throws NotFoundException
     {
         dockerClient.stopContainerCmd(id).withTimeout(stopTimeOut).exec();
     }
@@ -34,7 +39,13 @@ public class DockerHelper
     {
         if (stopFirst)
         {
-            stopContainer(id, stopTimeOut);
+            try
+            {
+                stopContainer(id, stopTimeOut);
+            }
+            catch (NotModifiedException e)
+            {
+            }
         }
 
         dockerClient.removeContainerCmd(id).withForce(forceKill).withRemoveVolumes(removeVolumes).exec();
@@ -45,5 +56,26 @@ public class DockerHelper
         String[] imageParts = StringUtils.split(image, ":", 2);
 
         return new String[] { imageParts[0], ArrayUtils.get(imageParts, 1, "latest") };
+    }
+
+    public List<Container> getContainers(Collection<String> ids)
+    {
+        return dockerClient.listContainersCmd().withIdFilter(ids).withShowAll(true).exec();
+    }
+
+    public Container getContainer(String id)
+        throws NotFoundException
+    {
+        return getContainers(Collections.singleton(id)).stream().findFirst().orElse(null);
+    }
+
+    public String getContainerStateLogAppend(String id)
+    {
+        return getContainerStateLogAppend(getContainer(id));
+    }
+
+    public String getContainerStateLogAppend(Container container)
+    {
+        return "state: " + (container == null ? "n/a" : container.getState());
     }
 }

@@ -1,12 +1,8 @@
 package org.bitstrings.maven.plugins.dockerrun;
 
-import java.util.Set;
-
 import org.apache.maven.plugin.MojoExecutionException;
-import org.bitstrings.maven.plugins.dockerrun.AbstractDockerRunMojo.Verbosity;
 
-import com.github.dockerjava.api.exception.NotFoundException;
-import com.github.dockerjava.api.exception.NotModifiedException;
+import com.github.dockerjava.api.model.Container;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -34,66 +30,70 @@ public class Remove
     @Setter
     private boolean removeVolumesOnContainerRemove = true;
 
+    public Remove(AbstractDockerRunMojo mojo)
+    {
+        super(mojo);
+    }
+
     @Override
-    public void exec(AbstractDockerRunMojo dockerRunMojo)
+    public void exec()
         throws MojoExecutionException
     {
-        Set<String> dockerRunIds =
-            MavenUtils.getRequestDockerRunData(dockerRunMojo.getMavenSession().getRequest()).keySet();
-
-        for (String id : getContainersIds(dockerRunMojo))
+        for (String id : getContainersIds())
         {
-            if (!dockerRunIds.contains(id))
-            {
-                if (ignoreContainerNotFound)
-                {
-                    continue;
-                }
-
-                throw new MojoExecutionException("Container id " + id + " not found for this build.");
-            }
-
-            try
-            {
-                exec(dockerRunMojo, id);
-            }
-            catch (NotFoundException e)
-            {
-                if (!ignoreContainerNotFound)
-                {
-                    throw new MojoExecutionException("Container id " + id + " not found.");
-                }
-            }
+            exec(id);
         }
     }
 
-    public void exec(AbstractDockerRunMojo dockerRunMojo, String id)
-        throws NotFoundException
+    public void exec(String id)
+        throws MojoExecutionException
     {
-        Run run = MavenUtils.getRequestDockerRunData(dockerRunMojo.getMavenSession().getRequest()).get(id);
+        Run run = MavenUtils.getRequestDockerRunData(getMojo().getMavenSession().getRequest()).get(id);
 
-        if (dockerRunMojo.getVerbosity() == Verbosity.HIGH)
+        if (run == null)
         {
-            dockerRunMojo.getLog().info("Removing container " + id + run.getAliasNameLogAppend() + ".");
-        }
-
-        try
-        {
-            dockerRunMojo.getDockerHelper().stopContainer(id, stopContainerTimeout);
-        }
-        catch (NotModifiedException e)
-        {
-            if (dockerRunMojo.getVerbosity() == Verbosity.HIGH)
+            if (!ignoreContainerNotFound)
             {
-                dockerRunMojo.getLog().info("Container " + id + run.getAliasNameLogAppend() + " already removed.");
+                throw new MojoExecutionException("Container id " + id + " not found for this build.");
             }
 
             return;
         }
 
-        if (!dockerRunMojo.isQuiet())
+        Container container = getMojo().getDockerHelper().getContainer(id);
+
+        if (container == null)
         {
-            dockerRunMojo.getLog().info("Container " + id + run.getAliasNameLogAppend() + " removed.");
+            if (!ignoreContainerNotFound)
+            {
+                throw new MojoExecutionException("Container " + id + run.getAliasNameLogAppend() + " not found.");
+            }
+
+            return;
+        }
+
+        if (!getMojo().isQuiet())
+        {
+            getMojo().getLog().info(
+                "Removing container " + id
+                    + "(" + getMojo().getDockerHelper().getContainerStateLogAppend(container) + ")"
+                    + run.getAliasNameLogAppend()
+                    + "."
+            );
+        }
+
+        getMojo().getDockerHelper().removeContainer(
+            id,
+            stopContainerTimeout,
+            removeVolumesOnContainerRemove,
+            false,
+            forceRemove,
+            false
+        );
+
+        if (!getMojo().isQuiet())
+        {
+            getMojo().getLog().info("Container " + id + run.getAliasNameLogAppend() + " removed.");
         }
     }
 }

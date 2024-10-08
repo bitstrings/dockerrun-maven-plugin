@@ -2,6 +2,8 @@ package org.bitstrings.maven.plugins.dockerrun;
 
 import static org.apache.maven.plugins.annotations.LifecyclePhase.PRE_INTEGRATION_TEST;
 import static org.bitstrings.maven.plugins.dockerrun.DockerRunMavenProperties.PropertyType.ID;
+import static org.bitstrings.maven.plugins.dockerrun.DockerRunMavenProperties.PropertyType.STATE;
+import static org.bitstrings.maven.plugins.dockerrun.DockerRunMavenProperties.PropertyType.STATUS_CODE;
 import static org.bitstrings.maven.plugins.dockerrun.Run.ImagePullPolicy.ALWAYS;
 import static org.bitstrings.maven.plugins.dockerrun.Run.ImagePullPolicy.IF_NOT_PRESENT;
 
@@ -12,6 +14,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.apache.commons.collections4.map.LinkedMap;
@@ -27,12 +31,14 @@ import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.PullImageResultCallback;
+import com.github.dockerjava.api.command.WaitContainerResultCallback;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.StreamType;
 import com.github.dockerjava.api.model.Volume;
+import com.github.dockerjava.api.model.WaitResponse;
 
 import lombok.Getter;
 import oshi.SystemInfo;
@@ -86,7 +92,7 @@ public class DockerRunMojo
     private static final ResultCallback.Adapter<?> RESULT_CALLBACK_NOOP = new ResultCallback.Adapter<>();
 
     @Override
-    public void execute()
+    public void dockerrunExec()
         throws MojoExecutionException, MojoFailureException
     {
         data = getMavenSession().getRequest().getData();
@@ -284,18 +290,18 @@ public class DockerRunMojo
             }
             while (retry);
 
-            runById.put(createContainerResponse.getId(), run);
+            String containerId = createContainerResponse.getId();
+
+            runById.put(containerId, run);
 
             MavenUtils.getRequestDockerRunData(getMavenSession().getRequest());
 
-            dataRunById.put(createContainerResponse.getId(), run);
+            dataRunById.put(containerId, run);
 
             if (run.getAlias() != null)
             {
-                dockerRunMavenProperties.setDockerRunProperty(run.getAlias(), ID, createContainerResponse.getId());
+                dockerRunMavenProperties.setDockerRunProperty(run.getAlias(), ID, containerId);
             }
-
-            getDockerClient().startContainerCmd(createContainerResponse.getId()).exec();
 
             if (!isQuiet())
             {
@@ -303,17 +309,19 @@ public class DockerRunMojo
                 {
                     StringBuilder info = new StringBuilder()
                         .append("Container ")
-                        .append(createContainerResponse.getId())
+                        .append(containerId)
+                        .append(" ")
                         .append(run.getAliasNameLogAppend())
                         .append(System.lineSeparator())
-                        .append("Environment:")
+                        .append("[Environment]")
                         .append(System.lineSeparator());
 
                     if (run.getEnv() != null)
                     {
                         run.getEnv().entrySet().forEach(
                             envEntry -> {
-                                info.append(envEntry.getKey())
+                                info
+                                    .append(envEntry.getKey())
                                     .append("=")
                                     .append(envEntry.getValue())
                                     .append(System.lineSeparator());
@@ -321,14 +329,15 @@ public class DockerRunMojo
                         );
                     }
 
-                    info.append("Volumes:")
+                    info.append("[Volumes]")
                         .append(System.lineSeparator());
 
                     if (run.getVolumes() != null)
                     {
                         run.getVolumes().getBind().getVolumes().forEach(
                             volume -> {
-                                info.append(volume.getSource())
+                                info
+                                    .append(volume.getSource())
                                     .append(":")
                                     .append(volume.getDestination());
 
@@ -347,41 +356,101 @@ public class DockerRunMojo
 
                     getLog().info(info.toString());
                 }
-
-                getLog().info(
-                    "Container " + createContainerResponse.getId() + run.getAliasNameLogAppend() + " started."
-                );
             }
 
             try
             {
-                getDockerClient().logContainerCmd(createContainerResponse.getId())
-                    .withStdOut(true)
-                    .withStdErr(true)
-                    .withTailAll()
-                    .withFollowStream(true)
-                    .exec(isQuiet()
-                        ? resultCallbackAdapterNoop()
-                        : new ResultCallback.Adapter<>()
+                getDockerClient().startContainerCmd(containerId).exec();
+
+                if (!isQuiet())
+                {
+                    getLog().info("Container " + containerId + run.getAliasNameLogAppend() + " started.");
+                }
+
+                WaitContainerResultCallback waitContainerResultCallback =
+                    getDockerClient().waitContainerCmd(containerId).exec(
+                        new WaitContainerResultCallback()
                         {
                             @Override
-                            public void onNext(Frame object)
+                            public void onNext(WaitResponse waitResponse)
                             {
-                                StreamType streamType = object.getStreamType();
+                                super.onNext(waitResponse);
 
-                                if (
-                                    (run.isEchoStdOut() && (streamType == StreamType.STDOUT))
-                                        || (run.isEchoStdErr() && (streamType == StreamType.STDERR))
-                                )
-                                {
-                                    System.out.print(new String(object.getPayload()));
-                                }
+                                dockerRunMavenProperties.setDockerRunProperty(
+                                    run.getAlias(),
+                                    STATUS_CODE,
+                                    String.valueOf(waitResponse.getStatusCode())
+                                );
+                            }
+
+                            @Override
+                            public void onComplete()
+                            {
+                                super.onComplete();
+
+                                dockerRunMavenProperties.setDockerRunProperty(
+                                    run.getAlias(),
+                                    STATE,
+                                    "completed"
+                                );
                             }
                         }
                     )
-                    .awaitCompletion();
+                    .awaitStarted();
+
+                if (!run.isDetach())
+                {
+                    getDockerClient().logContainerCmd(containerId)
+                        .withStdOut(true)
+                        .withStdErr(true)
+                        .withTailAll()
+                        .withFollowStream(true)
+                        .exec(isQuiet()
+                            ? resultCallbackAdapterNoop()
+                            : new ResultCallback.Adapter<>()
+                            {
+                                @Override
+                                public void onNext(Frame frame)
+                                {
+                                    StreamType streamType = frame.getStreamType();
+
+                                    if (
+                                        (run.isEchoStdOut() && (streamType == StreamType.STDOUT))
+                                            || (run.isEchoStdErr() && (streamType == StreamType.STDERR))
+                                    )
+                                    {
+                                        System.out.print(new String(frame.getPayload()));
+                                    }
+                                }
+                            });
+
+                    Integer statusCode =
+                        waitContainerResultCallback.awaitStatusCode(run.getCompletionTimeout(), TimeUnit.SECONDS);
+
+                    if (!isQuiet())
+                    {
+                        getLog().info(
+                            "Container " + containerId + run.getAliasNameLogAppend()
+                                + " returned status code " + statusCode
+                                + "."
+                        );
+                    }
+
+                    if (run.isFailOnError() && !Objects.equals(0, statusCode))
+                    {
+                        throw new MojoFailureException(
+                            "Container " + containerId + run.getAliasNameLogAppend()
+                                + " returned status code " + statusCode
+                                + "."
+                        );
+                    }
+                }
             }
-            catch (InterruptedException e)
+            catch (MojoFailureException e)
+            {
+                throw e;
+            }
+            catch (Exception e)
             {
                 throw new MojoFailureException(e.getMessage(), e);
             }
@@ -391,7 +460,7 @@ public class DockerRunMojo
     protected void removeContainers()
         throws MojoExecutionException
     {
-        Remove remove = new Remove();
+        Remove remove = new Remove(this);
 
         remove.setIds(runById.asList());
         remove.setRemoveVolumesOnContainerRemove(removeVolumesOnContainerRemove);
@@ -399,7 +468,7 @@ public class DockerRunMojo
         remove.setStopContainerTimeout(120);
         remove.setIgnoreContainerNotFound(true);
 
-        remove.exec(this);
+        remove.exec();
     }
 
     protected List<Bind> getBindsFromVolumesParam(Volumes volumes)

@@ -24,6 +24,7 @@
                 <artifactId>dockerrun-maven-plugin</artifactId>
                 <version>@project.version@</version>
                 <configuration>
+                    <verbosity>HIGH</verbosity>
                     <runs>
                         <run>
                             <image>ubuntu:latest</image>

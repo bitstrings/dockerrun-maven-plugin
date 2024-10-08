@@ -42,17 +42,17 @@ public class DockerRunStopMojo
     private boolean allowExternalIds;
 
     @Override
-    public void execute()
+    public void dockerrunExec()
         throws MojoExecutionException, MojoFailureException
     {
         if (stops.isEmpty())
         {
-            stops = singletonList(new Stop());
+            stops = singletonList(new Stop(this));
         }
 
         for (Stop stop : stops)
         {
-            stop.exec(this);
+            stop.exec();
         }
     }
 }

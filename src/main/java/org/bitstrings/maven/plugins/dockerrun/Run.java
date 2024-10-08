@@ -24,6 +24,10 @@ public class Run
 
     @Getter
     @Setter
+    private boolean detach;
+
+    @Getter
+    @Setter
     private Properties env;
 
     @Getter
@@ -77,6 +81,14 @@ public class Run
     @Getter
     @Setter
     private String alias;
+
+    @Getter
+    @Setter
+    private Long completionTimeout = 100L;
+
+    @Getter
+    @Setter
+    private boolean failOnError = true;
 
     private String aliasNameLogAppend;
 

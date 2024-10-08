@@ -4,6 +4,8 @@ import java.time.Duration;
 
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
+import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 
@@ -27,13 +29,17 @@ public abstract class AbstractDockerRunMojo
     @Getter
     private MavenSession mavenSession;
 
-    @Parameter(defaultValue = "NORMAL")
+    @Parameter(defaultValue = "NORMAL", property = "dockerrun.verbosity")
     @Getter
     private Verbosity verbosity;
 
     @Parameter(defaultValue = "dockerrun.")
     @Getter
     private String propertyPrefix;
+
+    @Parameter(defaultValue = "false", property = "dockerrun.skip")
+    @Getter
+    private boolean skip;
 
     @Getter
     private DockerClientConfig dockerClientConfig;
@@ -86,4 +92,21 @@ public abstract class AbstractDockerRunMojo
     {
         return verbosity == Verbosity.QUIET;
     }
+
+    @Override
+    public void execute()
+        throws MojoExecutionException, MojoFailureException
+    {
+        if (skip)
+        {
+            getLog().info("Skipping dockerrun execution.");
+
+            return;
+        }
+
+        dockerrunExec();
+    }
+
+    public abstract void dockerrunExec()
+        throws MojoExecutionException, MojoFailureException;
 }

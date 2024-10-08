@@ -43,17 +43,25 @@ public abstract class AbstractDockerRunOperation
     @Setter
     private List<Pattern> namePatterns;
 
-    public Set<String> getContainersIds(AbstractDockerRunMojo dockerRunMojo)
+    @Getter
+    private final AbstractDockerRunMojo mojo;
+
+    public AbstractDockerRunOperation(AbstractDockerRunMojo mojo)
+    {
+        this.mojo = mojo;
+    }
+
+    public Set<String> getContainersIds()
         throws MojoExecutionException
     {
         DockerRunMavenProperties dockerRunMavenProperties =
-            new DockerRunMavenProperties(dockerRunMojo.getMavenProject(), dockerRunMojo.getPropertyPrefix());
+            new DockerRunMavenProperties(mojo.getMavenProject(), mojo.getPropertyPrefix());
 
-        Set<String> toStopIds = new HashSet<>();
+        Set<String> containersIds = new HashSet<>();
 
         if (ids != null)
         {
-            toStopIds.addAll(ids);
+            containersIds.addAll(ids);
         }
 
         if (ObjectUtils.isNotEmpty(aliases))
@@ -68,13 +76,13 @@ public abstract class AbstractDockerRunOperation
                     throw new MojoExecutionException("Container alias " + alias + " not found.");
                 }
 
-                toStopIds.add(id);
+                containersIds.add(id);
             }
         }
 
         if (ObjectUtils.isNotEmpty(namePatterns))
         {
-            try (ListContainersCmd listContainersCmd = dockerRunMojo.getDockerClient().listContainersCmd())
+            try (ListContainersCmd listContainersCmd = mojo.getDockerClient().listContainersCmd())
             {
                 List<Container> containers = listContainersCmd.withShowAll(true).exec();
 
@@ -87,23 +95,23 @@ public abstract class AbstractDockerRunOperation
                                 .anyMatch(containerName -> namePattern.matcher(containerName).find())
                         )
                         {
-                            toStopIds.add(container.getId());
+                            containersIds.add(container.getId());
                         }
                     }
                 }
             }
         }
 
-        MavenUtils.getRequestDockerRunData(dockerRunMojo.getMavenSession().getRequest());
+        MavenUtils.getRequestDockerRunData(mojo.getMavenSession().getRequest());
 
-        if (toStopIds.isEmpty())
+        if (containersIds.isEmpty())
         {
-            toStopIds.addAll(MavenUtils.getRequestDockerRunData(dockerRunMojo.getMavenSession().getRequest()).keySet());
+            containersIds.addAll(MavenUtils.getRequestDockerRunData(mojo.getMavenSession().getRequest()).keySet());
         }
 
-        return toStopIds;
+        return containersIds;
     }
 
-    public abstract void exec(AbstractDockerRunMojo dockerRunMojo)
+    public abstract void exec()
         throws MojoExecutionException;
 }
