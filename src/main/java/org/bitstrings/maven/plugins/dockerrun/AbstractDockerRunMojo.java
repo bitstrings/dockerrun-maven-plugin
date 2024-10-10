@@ -65,9 +65,9 @@ public abstract class AbstractDockerRunMojo
             dockerHttpClient = new ApacheDockerHttpClient.Builder()
                 .dockerHost(dockerClientConfig.getDockerHost())
                 .sslConfig(dockerClientConfig.getSSLConfig())
-                .connectionTimeout(Duration.ofSeconds(60))
+                .connectionTimeout(Duration.ofSeconds(120))
                 .maxConnections(250)
-                .responseTimeout(Duration.ofSeconds(60))
+                .responseTimeout(Duration.ofSeconds(120))
                 .build();
 
             dockerClient = DockerClientBuilder.getInstance(dockerClientConfig)

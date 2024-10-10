@@ -400,7 +400,7 @@ public class DockerRunMojo
 
                 if (!run.isDetach())
                 {
-                    getDockerClient().logContainerCmd(containerId)
+                    ResultCallback.Adapter<Frame> logCallback = getDockerClient().logContainerCmd(containerId)
                         .withStdOut(true)
                         .withStdErr(true)
                         .withTailAll()
@@ -426,6 +426,8 @@ public class DockerRunMojo
 
                     Integer statusCode =
                         waitContainerResultCallback.awaitStatusCode(run.getCompletionTimeout(), TimeUnit.SECONDS);
+
+                    logCallback.awaitCompletion(120, TimeUnit.SECONDS);
 
                     if (!isQuiet())
                     {
@@ -467,6 +469,7 @@ public class DockerRunMojo
         remove.setStopBeforeContainerRemove(true);
         remove.setStopContainerTimeout(120);
         remove.setIgnoreContainerNotFound(true);
+        remove.setForceRemove(true);
 
         remove.exec();
     }

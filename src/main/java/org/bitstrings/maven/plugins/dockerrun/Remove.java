@@ -72,6 +72,11 @@ public class Remove
             return;
         }
 
+        if ("removing".equals(container.getStatus()))
+        {
+            return;
+        }
+
         if (!getMojo().isQuiet())
         {
             getMojo().getLog().info(

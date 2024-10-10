@@ -17,7 +17,7 @@ public class Stop
 
     @Getter
     @Setter
-    private int stopContainerTimeout = 30;
+    private int stopContainerTimeout = Integer.MAX_VALUE;
 
     public Stop(AbstractDockerRunMojo mojo)
     {

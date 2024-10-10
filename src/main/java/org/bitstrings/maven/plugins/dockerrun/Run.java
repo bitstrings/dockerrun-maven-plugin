@@ -84,7 +84,7 @@ public class Run
 
     @Getter
     @Setter
-    private Long completionTimeout = 100L;
+    private Long completionTimeout = Long.MAX_VALUE;
 
     @Getter
     @Setter
