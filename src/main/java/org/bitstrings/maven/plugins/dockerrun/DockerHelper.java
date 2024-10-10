@@ -8,6 +8,7 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.exception.ConflictException;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.exception.NotModifiedException;
 import com.github.dockerjava.api.model.Container;
@@ -35,7 +36,7 @@ public class DockerHelper
         boolean forceKill,
         boolean ignoreAlreadyStopped
     )
-        throws NotFoundException, NotModifiedException
+        throws NotFoundException
     {
         if (stopFirst)
         {
@@ -43,12 +44,19 @@ public class DockerHelper
             {
                 stopContainer(id, stopTimeOut);
             }
-            catch (NotModifiedException e)
+            catch (NotModifiedException | ConflictException e)
             {
             }
         }
 
-        dockerClient.removeContainerCmd(id).withForce(forceKill).withRemoveVolumes(removeVolumes).exec();
+        try
+        {
+            dockerClient.removeContainerCmd(id).withForce(forceKill).withRemoveVolumes(removeVolumes).exec();
+        }
+        catch (ConflictException e)
+        {
+            // REVIEW: not the best
+        }
     }
 
     public String[] extractImageParts(String image)
