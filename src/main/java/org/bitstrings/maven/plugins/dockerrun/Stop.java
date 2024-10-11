@@ -1,6 +1,7 @@
 package org.bitstrings.maven.plugins.dockerrun;
 
 import org.apache.maven.plugin.MojoExecutionException;
+import org.bitstrings.maven.plugins.dockerrun.util.MavenUtils;
 
 import com.github.dockerjava.api.exception.NotModifiedException;
 import com.github.dockerjava.api.model.Container;

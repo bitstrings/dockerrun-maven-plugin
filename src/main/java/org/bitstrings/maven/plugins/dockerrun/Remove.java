@@ -1,6 +1,7 @@
 package org.bitstrings.maven.plugins.dockerrun;
 
 import org.apache.maven.plugin.MojoExecutionException;
+import org.bitstrings.maven.plugins.dockerrun.util.MavenUtils;
 
 import com.github.dockerjava.api.model.Container;
 
@@ -48,7 +49,7 @@ public class Remove
     public void exec(String id)
         throws MojoExecutionException
     {
-        Run run = MavenUtils.getRequestDockerRunData(getMojo().getMavenSession().getRequest()).get(id);
+        Run run = MavenUtils.getRequestDockerRunData(getMojo().getMavenSession()).get(id);
 
         if (run == null)
         {

@@ -22,6 +22,7 @@ import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.bitstrings.maven.plugins.dockerrun.util.MavenUtils;
 
 import com.github.dockerjava.api.command.ListContainersCmd;
 import com.github.dockerjava.api.model.Container;
@@ -106,7 +107,7 @@ public abstract class AbstractDockerRunOperation
 
         if (containersIds.isEmpty())
         {
-            containersIds.addAll(MavenUtils.getRequestDockerRunData(mojo.getMavenSession().getRequest()).keySet());
+            containersIds.addAll(MavenUtils.getRequestDockerRunData(mojo.getMavenSession()).keySet());
         }
 
         return containersIds;

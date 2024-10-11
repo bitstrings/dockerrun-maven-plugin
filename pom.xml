@@ -25,7 +25,7 @@ limitations under the License.
 
     <groupId>org.bitstrings.maven.plugins</groupId>
     <artifactId>dockerrun-maven-plugin</artifactId>
-    <version>0.14.6-SNAPSHOT</version>
+    <version>0.14.9-SNAPSHOT</version>
 
     <name>dockerrun-maven-plugin</name>
 

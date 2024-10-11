@@ -36,7 +36,7 @@ public class Run
 
     @Getter
     @Setter
-    private boolean init = false;
+    private boolean init = true;
 
     @Getter
     @Setter

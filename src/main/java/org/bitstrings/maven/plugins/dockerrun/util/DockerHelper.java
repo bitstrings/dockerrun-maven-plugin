@@ -1,4 +1,4 @@
-package org.bitstrings.maven.plugins.dockerrun;
+package org.bitstrings.maven.plugins.dockerrun.util;
 
 import java.util.Collection;
 import java.util.Collections;

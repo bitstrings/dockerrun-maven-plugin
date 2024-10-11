@@ -13,12 +13,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.map.LinkedMap;
+import org.apache.commons.lang3.BooleanUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.maven.execution.AbstractExecutionListener;
 import org.apache.maven.execution.ExecutionEvent;
@@ -26,6 +27,8 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
+import org.bitstrings.maven.plugins.dockerrun.util.Data;
+import org.bitstrings.maven.plugins.dockerrun.util.MavenUtils;
 
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.CreateContainerCmd;
@@ -34,6 +37,7 @@ import com.github.dockerjava.api.command.PullImageResultCallback;
 import com.github.dockerjava.api.command.WaitContainerResultCallback;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Bind;
+import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.StreamType;
@@ -85,8 +89,6 @@ public class DockerRunMojo
     @Getter
     private LinkedMap<String, Run> runById = new LinkedMap<>();
 
-    private Map<String, Object> data;
-
     private static final PullImageResultCallback PULL_IMAGE_RESULT_CALLBACK_NOOP = new PullImageResultCallback();
 
     private static final ResultCallback.Adapter<?> RESULT_CALLBACK_NOOP = new ResultCallback.Adapter<>();
@@ -95,65 +97,78 @@ public class DockerRunMojo
     public void dockerrunExec()
         throws MojoExecutionException, MojoFailureException
     {
-        data = getMavenSession().getRequest().getData();
-
-        if (removeContainersOnVmShutdown)
+        synchronized (DockerRunMojo.class)
         {
-            Runtime.getRuntime().addShutdownHook(
-                new Thread(() -> {
-                    try
-                    {
-                        if (!isQuiet())
-                        {
-                            getLog().info("VM shutdown container clean up.");
-                        }
-
-                        removeContainers();
-                    }
-                    catch (MojoExecutionException e)
-                    {
-                    }
-                })
-            );
-        }
-
-        MavenUtils.proxyExecutionListener(
-            getMavenSession(),
-            true,
-            new AbstractExecutionListener()
+            if (removeContainersOnVmShutdown)
             {
-                @Override
-                public void sessionEnded(ExecutionEvent event)
-                {
-                    if (removeContainersOnBuildComplete)
-                    {
-                        if (!isQuiet())
-                        {
-                            getLog().info("End build container clean up.");
-                        }
+                Boolean vmShutdownHooked = MavenUtils.getRequestData(getMavenSession(), "vmShutdownHook");
 
-                        try
+                if (BooleanUtils.isNotTrue(vmShutdownHooked))
+                {
+                    Runtime.getRuntime().addShutdownHook(
+                        new Thread(() -> {
+                            try
+                            {
+                                if (!isQuiet())
+                                {
+                                    getLog().info("VM shutdown container clean up.");
+                                }
+
+                                removeContainers();
+                            }
+                            catch (MojoExecutionException e)
+                            {
+                            }
+                        })
+                    );
+                }
+
+                MavenUtils.setRequestData(getMavenSession(), "vmShutdownHook", true);
+            }
+
+            Boolean sessionHooked = MavenUtils.getRequestData(getMavenSession(), "sessionHook");
+
+            if (BooleanUtils.isNotTrue(sessionHooked))
+            {
+                MavenUtils.proxyExecutionListener(
+                    getMavenSession(),
+                    true,
+                    new AbstractExecutionListener()
+                    {
+                        @Override
+                        public void sessionEnded(ExecutionEvent event)
                         {
-                            removeContainers();
-                        }
-                        catch (MojoExecutionException e)
-                        {
+                            if (removeContainersOnBuildComplete)
+                            {
+                                if (!isQuiet())
+                                {
+                                    getLog().info("End build container clean up.");
+                                }
+
+                                try
+                                {
+                                    removeContainers();
+                                }
+                                catch (MojoExecutionException e)
+                                {
+                                }
+
+                                if (!isQuiet())
+                                {
+                                    showSummary();
+                                }
+                            }
                         }
                     }
-                }
+                );
+
+                MavenUtils.setRequestData(getMavenSession(), "sessionHook", true);
             }
-        );
+        }
 
         dockerRunMavenProperties = new DockerRunMavenProperties(getMavenProject(), getPropertyPrefix());
 
-        LinkedMap<String, Run> dataRunById = MavenUtils.getRequestDockerRunData(getMavenSession().getRequest());
-
-        if (dataRunById == null)
-        {
-            dataRunById = new LinkedMap<>();
-
-            data.put(DockerRunMojo.class.getName(), dataRunById);
-        }
+        Data<Run> dataRunById = MavenUtils.getRequestDockerRunData(getMavenSession());
 
         for (Run run : runs)
         {
@@ -294,7 +309,7 @@ public class DockerRunMojo
 
             runById.put(containerId, run);
 
-            MavenUtils.getRequestDockerRunData(getMavenSession().getRequest());
+            MavenUtils.getRequestDockerRunData(getMavenSession());
 
             dataRunById.put(containerId, run);
 
@@ -429,6 +444,8 @@ public class DockerRunMojo
 
                     logCallback.awaitCompletion(120, TimeUnit.SECONDS);
 
+                    waitContainerResultCallback.awaitCompletion(120, TimeUnit.SECONDS);
+
                     if (!isQuiet())
                     {
                         getLog().info(
@@ -459,12 +476,54 @@ public class DockerRunMojo
         }
     }
 
+    private void showSummary()
+    {
+        List<String> ids = MavenUtils.getRequestDockerRunData(getMavenSession()).asList();
+
+        if (CollectionUtils.isEmpty(ids))
+        {
+            return;
+        }
+
+        List<Container> containers =
+            getDockerClient().listContainersCmd().withIdFilter(ids).withShowAll(true).exec();
+
+        StringBuilder summary =
+            new StringBuilder()
+                .append("Containers started: ")
+                .append(runById.size())
+                .append(" / remaining: ")
+                .append(containers.size());
+
+        for (Container container : containers)
+        {
+            summary
+                .append("\n")
+                .append("[container] ")
+                .append("id: ")
+                .append(container.getId())
+                .append(", state: ")
+                .append(container.getState())
+                .append(", image: ")
+                .append(container.getImage());
+        }
+
+        getLog().info(summary.toString());
+    }
+
     protected void removeContainers()
         throws MojoExecutionException
     {
+        List<String> ids = MavenUtils.getRequestDockerRunData(getMavenSession()).asList();
+
+        if (CollectionUtils.isEmpty(ids))
+        {
+            return;
+        }
+
         Remove remove = new Remove(this);
 
-        remove.setIds(runById.asList());
+        remove.setIds(ids);
         remove.setRemoveVolumesOnContainerRemove(removeVolumesOnContainerRemove);
         remove.setStopBeforeContainerRemove(true);
         remove.setStopContainerTimeout(120);
