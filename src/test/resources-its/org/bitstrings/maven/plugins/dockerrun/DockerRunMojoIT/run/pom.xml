@@ -24,9 +24,9 @@
                         <run>
                             <image>ubuntu:latest</image>
                             <args>
-                                <arg>sh</arg>
-                                <arg>-c</arg>
-                                <arg>echo $XXX &amp;&amp; id</arg>
+                                <arg>ls</arg>
+                                <arg>-al</arg>
+                                <arg>/</arg>
                             </args>
                             <env>
                                 <XXX>I Don't care.</XXX>
@@ -42,7 +42,7 @@
                                 </bind>
                             </volumes>
                             <setUserToCurrent>true</setUserToCurrent>
-                            <autoRemove>false</autoRemove>
+                            <autoRemove>true</autoRemove>
                         </run>
                     </runs>
                 </configuration>
@@ -50,7 +50,6 @@
                     <execution>
                         <goals>
                             <goal>run</goal>
-                            <goal>remove</goal>
                         </goals>
                     </execution>
                 </executions>

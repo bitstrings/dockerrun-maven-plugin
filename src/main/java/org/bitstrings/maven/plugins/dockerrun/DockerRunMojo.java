@@ -38,11 +38,11 @@ import com.github.dockerjava.api.command.WaitContainerResultCallback;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.Container;
+import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.StreamType;
 import com.github.dockerjava.api.model.Volume;
-import com.github.dockerjava.api.model.WaitResponse;
 
 import lombok.Getter;
 import oshi.SystemInfo;
@@ -373,8 +373,30 @@ public class DockerRunMojo
                 }
             }
 
-            try
+            try (
+                ResultCallback.Adapter<Event> eventResultCallback =
+                    getDockerClient().eventsCmd().withContainerFilter(containerId).withEventFilter("destroy").exec(
+                        new ResultCallback.Adapter<>()
+                        {
+                            @Override
+                            public void onNext(Event event)
+                            {
+                                try
+                                {
+                                    close();
+                                }
+                                catch (IOException e)
+                                {
+                                }
+                            }
+                        }
+                    );
+                WaitContainerResultCallback waitContainerResultCallback =
+                    getDockerClient().waitContainerCmd(containerId).start()
+            )
             {
+                eventResultCallback.awaitStarted();
+
                 getDockerClient().startContainerCmd(containerId).exec();
 
                 if (!isQuiet())
@@ -382,44 +404,13 @@ public class DockerRunMojo
                     getLog().info("Container " + containerId + run.getAliasNameLogAppend() + " started.");
                 }
 
-                WaitContainerResultCallback waitContainerResultCallback =
-                    getDockerClient().waitContainerCmd(containerId).exec(
-                        new WaitContainerResultCallback()
-                        {
-                            @Override
-                            public void onNext(WaitResponse waitResponse)
-                            {
-                                super.onNext(waitResponse);
-
-                                dockerRunMavenProperties.setDockerRunProperty(
-                                    run.getAlias(),
-                                    STATUS_CODE,
-                                    String.valueOf(waitResponse.getStatusCode())
-                                );
-                            }
-
-                            @Override
-                            public void onComplete()
-                            {
-                                super.onComplete();
-
-                                dockerRunMavenProperties.setDockerRunProperty(
-                                    run.getAlias(),
-                                    STATE,
-                                    "completed"
-                                );
-                            }
-                        }
-                    )
-                    .awaitStarted();
-
                 if (!run.isDetach())
                 {
-                    ResultCallback.Adapter<Frame> logCallback = getDockerClient().logContainerCmd(containerId)
+                    getDockerClient().logContainerCmd(containerId)
                         .withStdOut(true)
                         .withStdErr(true)
-                        .withTailAll()
                         .withFollowStream(true)
+                        .withTailAll()
                         .exec(isQuiet()
                             ? resultCallbackAdapterNoop()
                             : new ResultCallback.Adapter<>()
@@ -437,14 +428,18 @@ public class DockerRunMojo
                                         System.out.print(new String(frame.getPayload()));
                                     }
                                 }
-                            });
+                            }).awaitCompletion(run.getCompletionTimeout(), TimeUnit.SECONDS);
 
                     Integer statusCode =
-                        waitContainerResultCallback.awaitStatusCode(run.getCompletionTimeout(), TimeUnit.SECONDS);
+                        waitContainerResultCallback.awaitStatusCode(120, TimeUnit.SECONDS);
 
-                    logCallback.awaitCompletion(120, TimeUnit.SECONDS);
+                    dockerRunMavenProperties.setDockerRunProperty(
+                        run.getAlias(),
+                        STATUS_CODE,
+                        String.valueOf(statusCode)
+                    );
 
-                    waitContainerResultCallback.awaitCompletion(120, TimeUnit.SECONDS);
+                    dockerRunMavenProperties.setDockerRunProperty(run.getAlias(), STATE, "completed");
 
                     if (!isQuiet())
                     {
@@ -453,6 +448,17 @@ public class DockerRunMojo
                                 + " returned status code " + statusCode
                                 + "."
                         );
+                    }
+
+                    if (run.isAutoRemove())
+                    {
+                        try
+                        {
+                            eventResultCallback.awaitCompletion();
+                        }
+                        catch (InterruptedException e)
+                        {
+                        }
                     }
 
                     if (run.isFailOnError() && !Objects.equals(0, statusCode))
