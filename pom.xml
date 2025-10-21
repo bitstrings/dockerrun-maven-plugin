@@ -98,7 +98,7 @@ limitations under the License.
 
         <commons-lang3.version>3.17.0</commons-lang3.version>
         <commons-collections4.version>4.4</commons-collections4.version>
-        <docker-java.version>3.4.0</docker-java.version>
+        <docker-java.version>3.6.0</docker-java.version>
         <oshi.version>6.6.3</oshi.version>
     </properties>
 
