@@ -333,14 +333,12 @@ public class DockerRunMojo
 
                     if (run.getEnv() != null)
                     {
-                        run.getEnv().entrySet().forEach(
-                            envEntry -> {
-                                info
-                                    .append(envEntry.getKey())
-                                    .append("=")
-                                    .append(envEntry.getValue())
-                                    .append(System.lineSeparator());
-                            }
+                        run.getEnv().entrySet().forEach(envEntry ->
+                            info
+                                .append(envEntry.getKey())
+                                .append("=")
+                                .append(envEntry.getValue())
+                                .append(System.lineSeparator())
                         );
                     }
 
@@ -588,7 +586,10 @@ public class DockerRunMojo
 
     public static <T> ResultCallback.Adapter<T> resultCallbackAdapterNoop()
     {
-        return (ResultCallback.Adapter<T>) RESULT_CALLBACK_NOOP;
+        @SuppressWarnings("unchecked")
+        ResultCallback.Adapter<T> resultCallbackNoop = (ResultCallback.Adapter<T>) RESULT_CALLBACK_NOOP;
+
+        return resultCallbackNoop;
     }
 
     public static PullImageResultCallback pullImageResultCallbackNoop()
